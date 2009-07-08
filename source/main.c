@@ -43,7 +43,7 @@ s32 valid_elf_image (void *addr);
 u32 load_elf_image (void *addr);
 extern void __exception_closeall();
 
-#define DEBUG
+// #define DEBUG
 
 void init_video_and_wpad()
 {
@@ -181,28 +181,14 @@ void mount_storage()
 			printf("[+] Mounting USB ... ");
 			#endif	
 
-			u32 retry;
-			for(retry = 0; retry < 5; retry++)
-			{
-				// initialize usb storage
-				__io_usbstorage.startup();
-			
-				USBmounted = fatMountSimple("usb", &__io_usbstorage);
-				if(USBmounted)
-				{
-					#ifdef DEBUG	
-					printf("OK!\n");
-					#endif	
-					break;
-				}
-			
-				// shutdown usb storage
-				__io_usbstorage.shutdown();
-			}
+			// initialize usb storage
+			__io_usbstorage.startup();
+			USBmounted = fatMountSimple("usb", &__io_usbstorage);
 
 			#ifdef DEBUG	
-			if(!USBmounted) printf("FAIL!\n"); 
-			#endif	
+			if(USBmounted) printf("OK!\n"); 
+			else printf("FAIL!\n");
+			#endif			
 		}
 	}
 }
@@ -274,9 +260,6 @@ int main(int argc, char **argv) {
 	// dol file on SD not found
 	if(inputFile == NULL) 
 	{
-		// shutdown sd storage
-		release_storage();
-		
 		// try loading from USB
 		inputFile = tryOpenDolFromUSB();
 	}
