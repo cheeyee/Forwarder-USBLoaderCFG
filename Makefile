@@ -29,7 +29,7 @@ INCLUDES	:=
 CFLAGS	= -g -Wall $(MACHDEP) $(INCLUDE)
 CXXFLAGS	=	$(CFLAGS)
 
-LDFLAGS = -g $(MACHDEP) -Wl,-Map,$(notdir $@).map -Wl,--section-start,.init=0x81000000
+LDFLAGS = -g $(MACHDEP) -Wl,-Map,$(notdir $@).map -Wl,--section-start,.init=0x81230000
 #Original Value: LDFLAGS =       $(MACHDEP) -mrvl -Wl,-Map,$(notdir $@).map,--section-start,.header=0x81230000
 
 #LDFLAGS	=	-g $(MACHDEP) -mrvl -Wl,-Map,$(notdir $@).map -T../rvl.ld

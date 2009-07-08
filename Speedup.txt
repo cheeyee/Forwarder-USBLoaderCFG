@@ -1,6 +1,0 @@
-If you want to speed up the sd card reading, then you could use the libogc available here:
-http://code.google.com/p/snes9x-gx/downloads/list
-it uses a read ahead cache.
-
-Just rename the libogc folder in your DevKitPro folder and place this libogc there.
-If you want to use the regular libogc again, then you only have to switch both folders.

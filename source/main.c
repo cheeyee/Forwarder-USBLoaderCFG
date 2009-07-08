@@ -4,6 +4,7 @@ Elf/Dol FOrwarder -- loads an elf or dol specified in the code.
 
  * Copyright (c) 2008 SpaceJump
  * Copyright (c) 2009 WiiPower
+ * Copyright (c) 2009 Narolez (changes for USB-Loader CFG and Preloader)
 
 Thanks to svpe, the creator of Front SD Loader and TCPLoad for giving me(SpaceJump) permission for using some of his
 functions.
@@ -33,14 +34,25 @@ static GXRModeObj *rmode = NULL;
 
 static int device = -1;
 static char filename[128];
+static u8 video_and_wpad_initialized = FALSE;
+static u8 SDmounted = FALSE;
+static u8 USBmounted = FALSE;
 	
 u32 load_dol_image (void *dolstart);
 s32 valid_elf_image (void *addr);
 u32 load_elf_image (void *addr);
 extern void __exception_closeall();
 
+#define DEBUG
+
 void init_video_and_wpad()
 {
+	// Video and WPAD initialized?
+	if(video_and_wpad_initialized)
+	{
+		return;
+	}
+	
 	// Initialise the video system
 	VIDEO_Init();
 	
@@ -81,18 +93,39 @@ void init_video_and_wpad()
 	// This function initialises the attached controllers
 	WPAD_Init();
 	WPAD_SetDataFormat(WPAD_CHAN_0, WPAD_FMT_BTNS_ACC_IR);
+	
+	video_and_wpad_initialized = TRUE;
 }
 
 void release_storage()
 {
 	if (device == 0)
 	{
+		#ifdef DEBUG	
+		printf("[+] Release SD ... ");
+		#endif	
+
 		fatUnmount("sd");
 		__io_wiisd.shutdown();
+		SDmounted = FALSE;
+
+		#ifdef DEBUG	
+		printf("OK!\n");
+		#endif	
+
 	} else
 	{
+		#ifdef DEBUG	
+		printf("[+] Release USB ... ");
+		#endif	
+
 		fatUnmount("usb");
 		__io_usbstorage.shutdown();
+		USBmounted = FALSE;
+
+		#ifdef DEBUG	
+		printf("OK!\n");
+		#endif	
 	}
 }
 
@@ -124,65 +157,142 @@ void mount_storage()
 
 	if (device == 0)
 	{
-		// initialize sd storage
-		__io_wiisd.startup();
-		
-		if (!fatMountSimple("sd", &__io_wiisd)) 
+		if(!SDmounted)
 		{
-			init_video_and_wpad();
-			printf("SD storage could not be initialized!\n");
-			printf("Press any button to reboot Wii...\n");
-			press_button_to_reboot();
-		}		
+			#ifdef DEBUG	
+			printf("[+] Mounting SD ... ");
+			#endif	
+			
+			// initialize sd storage
+			__io_wiisd.startup();
+			SDmounted = fatMountSimple("sd", &__io_wiisd);
+			
+			#ifdef DEBUG	
+			if(SDmounted) printf("OK!\n"); 
+			else printf("FAIL!\n");
+			#endif	
+		}
 	}
 	else
 	{
-		// initialize usb storage
-		__io_usbstorage.startup();
-		
-		if (!fatMountSimple("usb", &__io_usbstorage)) 
+		if(!USBmounted)
 		{
-			init_video_and_wpad();
-			printf("USB storage could not be initialized!\n");
-			printf("Press any button to reboot Wii...\n");
-			press_button_to_reboot();
+			#ifdef DEBUG	
+			printf("[+] Mounting USB ... ");
+			#endif	
+
+			u32 retry;
+			for(retry = 0; retry < 5; retry++)
+			{
+				// initialize usb storage
+				__io_usbstorage.startup();
+			
+				USBmounted = fatMountSimple("usb", &__io_usbstorage);
+				if(USBmounted)
+				{
+					#ifdef DEBUG	
+					printf("OK!\n");
+					#endif	
+					break;
+				}
+			
+				// shutdown usb storage
+				__io_usbstorage.shutdown();
+			}
+
+			#ifdef DEBUG	
+			if(!USBmounted) printf("FAIL!\n"); 
+			#endif	
 		}
 	}
 }
 
+FILE* openDol(char* file)
+{
+	snprintf(filename, 128, file);
+	mount_storage();
 
-//#define USB
+	#ifdef DEBUG	
+	printf("    Open %s ... ", file);
+	#endif	
+	
+	FILE* inputFile = fopen(filename, "rb");
+
+	#ifdef DEBUG	
+	if(inputFile == NULL)
+	{
+		printf("FAIL!\n");
+	} else
+	{
+		printf("OK!\n");
+	}	
+	#endif
+	
+	return inputFile;
+}
+
+FILE* tryOpenDolFromSD()
+{
+	FILE* inputFile;
+	inputFile = openDol( "sd:/apps/usbloader_cfg/boot.dol" );
+	if(inputFile == NULL)
+	{
+		inputFile = openDol( "sd:/apps/usbloader/boot.dol" );
+	}	
+	return inputFile;
+}
+
+FILE* tryOpenDolFromUSB()
+{
+	FILE* inputFile;
+	inputFile = openDol( "usb:/apps/usbloader_cfg/boot.dol" );
+	if(inputFile == NULL)
+	{
+		inputFile = openDol( "usb:/apps/usbloader/boot.dol" );
+	}	
+	return inputFile;
+}
 
 //---------------------------------------------------------------------------------
 int main(int argc, char **argv) {
 //---------------------------------------------------------------------------------
 
-	//create a buffer for the elf/dol content
+	#ifdef DEBUG
+		init_video_and_wpad();
+		printf("::: Configurable USB Loader - Forwarder Universal [SD/USB] by Narolez :::\n\n");
+	#endif
+
+	// create a buffer for the elf/dol content
 	void* myBuffer;
 	
-	//read elf/dol from given path:
+	// read elf/dol from given path:
 	FILE* inputFile;
 
-#ifndef USB
-	snprintf(filename, 128, "sd:/apps/usbloader_cfg/boot.dol");
-#endif
+	// try loading from SD
+	inputFile = tryOpenDolFromSD();
 	
-#ifdef USB
-	snprintf(filename, 128, "usb:/apps/usbloader_cfg/boot.dol");
-#endif
+	// dol file on SD not found
+	if(inputFile == NULL) 
+	{
+		// shutdown sd storage
+		release_storage();
+		
+		// try loading from USB
+		inputFile = tryOpenDolFromUSB();
+	}
 
-	mount_storage();
-	inputFile = fopen( filename, "rb");
-	
+	// dol file on SD or USB not found
 	if(inputFile == NULL) 
 	{
 		init_video_and_wpad();
-		printf("Error: Couldn't open the file: '");
-		printf(filename);
-		printf("'.\n");
+		printf("\nError: Couldn't open file!\n");
 		printf("Press any button to reboot Wii...\n");
 		press_button_to_reboot();
 	}
+	
+	#ifdef DEBUG	
+	printf("\n[+] Loading %s to buffer ... ", filename);
+	#endif
 	
 	int pos = ftell(inputFile);
 	fseek(inputFile, 0, SEEK_END);
@@ -193,9 +303,17 @@ int main(int argc, char **argv) {
 	fread( myBuffer, 1, size, inputFile);
 
 	fclose(inputFile);
+
+	#ifdef DEBUG	
+	printf("OK!\n");
+	#endif
 	
 	release_storage();
 	
+	#ifdef DEBUG	
+	printf("\n[+] Running ... ");
+	#endif
+
 	//Check if valid elf file:
 	s32 res;
 	res = valid_elf_image(myBuffer);
@@ -241,6 +359,10 @@ int main(int argc, char **argv) {
 
 		run_dol(myBuffer, &argv);		
 	}
+	
+	#ifdef DEBUG	
+	printf("HAVE FUN!");
+	#endif
 	
 	return 0;
 }
